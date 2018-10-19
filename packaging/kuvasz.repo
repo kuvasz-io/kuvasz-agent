@@ -1,0 +1,6 @@
+[kuvasz]
+name=Kuvasz.io repository
+baseurl=https://kuvasz.io/repo
+gpgcheck=0
+enabled=1
+

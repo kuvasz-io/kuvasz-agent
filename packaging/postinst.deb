@@ -1,0 +1,59 @@
+#!/bin/sh
+
+set -e
+
+[ -f /etc/default/kuvasz-agent ] && . /etc/default/kuvasz-agent
+
+startAgent() {
+    if [ -x /bin/systemctl ] ; then
+        /bin/systemctl daemon-reload
+        /bin/systemctl start kuvasz-agent.service
+	elif [ -x "/etc/init.d/kuvasz-agent" ]; then
+		if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+			invoke-rc.d kuvasz-agent start || true
+		else
+			/etc/init.d/kuvasz-agent start || true
+		fi
+	fi
+}
+
+case "$1" in
+	configure)
+	[ -z "$KUVASZ_USER" ] && KUVASZ_USER="kuvasz"
+	[ -z "$KUVASZ_GROUP" ] && KUVASZ_GROUP="kuvasz"
+	if ! getent group "$KUVASZ_GROUP" > /dev/null 2>&1 ; then
+	    addgroup --system "$KUVASZ_GROUP" --quiet
+	fi
+	if ! id $KUVASZ_USER > /dev/null 2>&1 ; then
+	    adduser --system --home /var/log/kuvasz --no-create-home \
+		--ingroup "$KUVASZ_GROUP" --disabled-password --shell /bin/false \
+		"$KUVASZ_USER"
+	fi
+
+
+	# Set user permissions on /var/log/kuvasz
+	mkdir -p /var/log/kuvasz
+	chown -R $KUVASZ_USER:$KUVASZ_GROUP /var/log/kuvasz
+	chmod 755 /var/log/kuvasz
+
+	# configuration files should not be modifiable by kuvasz user, as this can be a security issue
+	chown -Rh root:$KUVASZ_GROUP /etc/kuvasz/kuvasz-agent.ini
+	chmod 640 /etc/kuvasz/kuvasz-agent.ini
+
+	# if $2 is set, this is an upgrade
+	if ( [ -n $2 ] && [ "$RESTART_ON_UPGRADE" = "true" ] ) ; then
+		startAgent
+	# this is a fresh installation
+	elif [ -z $2 ] ; then
+        if [ -x /bin/systemctl ] ; then
+            /bin/systemctl daemon-reload
+            /bin/systemctl enable kuvasz-agent.service
+            /bin/systemctl start kuvasz-agent.service
+
+        elif [ -x /usr/sbin/update-rc.d ] ; then
+            update-rc.d kuvasz-agent defaults 95 10
+            service kuvasz-agent start
+        fi
+	fi
+	;;
+esac
