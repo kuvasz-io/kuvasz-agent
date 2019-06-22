@@ -1,3 +1,17 @@
+//  select datname,
+//         case state
+//             when 'idle' then 'idle'
+//             when 'active' then 'active'
+//             when 'idle in transaction' then 'idle-xact'
+//             when 'idle in transaction (aborted)' then 'idle-xact-aborted'
+//             when 'fastpath function call' then 'fastpath'
+//             when 'disabled' then 'disabled'
+//             else 'other'
+//         end as state,
+//         count(*) as count
+// from pg_stat_activity
+// group by datname, state;
+
 package main
 
 import (

@@ -36,16 +36,17 @@ func CollectConntrackStat() error {
 	var err error
 
 	defer wg.Done()
-	for {
+	ticker := time.NewTicker(time.Duration(DELTA) * time.Second)
+	for range ticker.C {
 		m = nil
 		max, err = sendvar(TEST_PROCROOT+"/proc/sys/net/netfilter/nf_conntrack_max", "sar.net.conntrack.max")
 		if err != nil {
-			return err
+			continue
 		}
 
 		count, err = sendvar(TEST_PROCROOT+"/proc/sys/net/netfilter/nf_conntrack_count", "sar.net.conntrack.count")
 		if err != nil {
-			return err
+			continue
 		}
 
 		if max == 0 {
@@ -59,6 +60,6 @@ func CollectConntrackStat() error {
 		if TEST_ENABLED {
 			return nil
 		}
-		time.Sleep(time.Duration(DELTA) * time.Second)
 	}
+	return nil
 }
