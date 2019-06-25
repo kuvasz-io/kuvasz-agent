@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"kuvasz/log"
+	"kuvasz-agent/log"
 	"os"
 	"regexp"
 	"strings"

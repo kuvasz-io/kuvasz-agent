@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"kuvasz/log"
+	"kuvasz-agent/log"
 	"net"
 	"net/http"
 	"strings"

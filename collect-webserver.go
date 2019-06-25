@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/satyrius/gonx"
 	"io/ioutil"
-	"kuvasz/log"
+	"kuvasz-agent/log"
 	"net/http"
 	"strconv"
 	"strings"

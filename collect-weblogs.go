@@ -10,7 +10,7 @@ import (
 	"github.com/hpcloud/tail"
 	"github.com/satyrius/gonx"
 
-	"kuvasz/log"
+	"kuvasz-agent/log"
 )
 
 type ReqStat struct {

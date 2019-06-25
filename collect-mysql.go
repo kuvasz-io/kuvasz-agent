@@ -3,7 +3,7 @@ package main
 import (
     "time"
     "strconv"
-	"kuvasz/log"
+    "kuvasz-agent/log"
     "database/sql"
     _ "github.com/go-sql-driver/mysql"
 )

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"github.com/soniah/gosnmp"
 	"io/ioutil"
-	"kuvasz/log"
+	"kuvasz-agent/log"
 	"os"
 	"strings"
 	"sync"
