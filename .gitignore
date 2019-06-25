@@ -3,4 +3,7 @@
 /*.deb
 /*.rpm
 /.DS_Store
-/packaging
+/packaging/rpm/*
+/packaging/deb/*
+
+
