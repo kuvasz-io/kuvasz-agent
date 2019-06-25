@@ -147,10 +147,19 @@ func ParseRecord(service string, rec *gonx.Entry) (ReqStat, string, error) {
 	return w, prefix, nil
 }
 
-func append_metric(m Metrics, name string, ts int64, value uint64) Metrics {
+func append_rate(m Metrics, name string, ts int64, value uint64) Metrics {
 	var metric Metric
 	metric.Name = name
 	metric.Value = float32(value) / float32(DELTA)
+	metric.Ts = ts
+	m = append(m, metric)
+	return m
+}
+
+func append_latency(m Metrics, name string, ts int64, value uint64, reqs uint64) Metrics {
+	var metric Metric
+	metric.Name = name
+	metric.Value = float32(value) / float32(reqs)
 	metric.Ts = ts
 	m = append(m, metric)
 	return m
@@ -196,13 +205,13 @@ func CollectWebLogStat(service string, filename string, format string) error {
 		if (w.ts - last_ts) > int64(DELTA) {
 			// calculate and send metrics
 			for k, v := range webmetrics {
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".req", v.ts, v.req)
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".bytes_in", v.ts, v.io_rx)
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".bytes_out", v.ts, v.io_tx)
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".rt", v.ts, v.t_time)
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".upstream_rt", v.ts, v.t_us_response)
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".upstream_connect", v.ts, v.t_us_connect)
-				m = append_metric(m, PREFIX+service+".url."+v.prefix+".upstream_headers", v.ts, v.t_us_headers)
+				m = append_rate(m, PREFIX+service+".url."+v.prefix+".req", v.ts, v.req)
+				m = append_rate(m, PREFIX+service+".url."+v.prefix+".bytes_in", v.ts, v.io_rx)
+				m = append_rate(m, PREFIX+service+".url."+v.prefix+".bytes_out", v.ts, v.io_tx)
+				m = append_latency(m, PREFIX+service+".url."+v.prefix+".rt", v.ts, v.t_time, v.req)
+				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_rt", v.ts, v.t_us_response, v.req)
+				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_connect", v.ts, v.t_us_connect, v.req)
+				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_headers", v.ts, v.t_us_headers, v.req)
 				log.Trace("[WEBLOG] [%s] k=%v, v=%v", service, k, v)
 			}
 			metricschannel <- m
