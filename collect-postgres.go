@@ -255,7 +255,12 @@ func ReadPGStat(pgstat *PGStat) error {
 			log.Error(3, "[POSTGRES] [pg_stat_database] Can't map pg_stat_database: ", err)
 			break
 		}
-		dbname := string(results["datname"].([]uint8))
+		r := results["datname"]
+		if r == nil {
+			log.Trace("[POSTGRES] Skip null database")
+			continue
+		}
+		dbname := string(r.([]uint8))
 		if re != nil && re.MatchString(dbname) {
 			log.Trace("[POSTGRES] Database %s blackisted, ignoring", dbname)
 			continue
