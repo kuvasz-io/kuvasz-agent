@@ -3,11 +3,12 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"kuvasz-agent/log"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type NetDevUsage struct {

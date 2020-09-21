@@ -3,10 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"kuvasz-agent/log"
 	"os"
 	"regexp"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type DiskStat struct {

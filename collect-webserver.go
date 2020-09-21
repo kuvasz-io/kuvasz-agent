@@ -1,13 +1,14 @@
 package main
 
 import (
-	"github.com/satyrius/gonx"
 	"io/ioutil"
-	"kuvasz-agent/log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/satyrius/gonx"
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type WebserverStat struct {

@@ -3,14 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hpcloud/tail"
 	"github.com/satyrius/gonx"
-
-	"kuvasz-agent/log"
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type ReqStat struct {
@@ -60,7 +60,25 @@ func parsems(s string, err error) uint64 {
 	return uint64(f * 1000.0)
 }
 
-func ParseRecord(service string, rec *gonx.Entry) (ReqStat, string, error) {
+func extractURL(re *regexp.Regexp, u string) string {
+	var url string
+
+	found := re.FindStringSubmatch(u)
+	if len(found) != 2 {
+		return "other"
+	}
+	url = found[1]
+	if url == "" {
+		return "other"
+	}
+	if url[len(url)-1] == '/' {
+		url = url[:len(url)-1]
+	}
+	url = strings.Replace(url, "/", "-", -1)
+	return url
+}
+
+func ParseRecord(service string, rec *gonx.Entry, urlre *regexp.Regexp) (ReqStat, string, error) {
 	var w ReqStat
 	var method string
 	var resp string
@@ -91,26 +109,29 @@ func ParseRecord(service string, rec *gonx.Entry) (ReqStat, string, error) {
 	}
 
 	m := strings.Fields(request)
-	if len(m) == 0 {
-		method = "other"
-	} else {
-		switch m[0] {
-		case "GET":
-			method = "get"
-		case "POST":
-			method = "post"
-		case "PUT":
-			method = "put"
-		case "PATCH":
-			method = "patch"
-		case "DELETE":
-			method = "delete"
-		case "OPTIONS":
-			method = "options"
-		default:
-			method = "other"
-		}
+	if len(m) != 3 {
+		log.Error(3, "[WEBLOG] [%s] Can't parse find request field in %v: %s", service, rec, err)
+		return w, prefix, err
 	}
+	switch m[0] {
+	case "GET":
+		method = "get"
+	case "POST":
+		method = "post"
+	case "PUT":
+		method = "put"
+	case "PATCH":
+		method = "patch"
+	case "DELETE":
+		method = "delete"
+	case "OPTIONS":
+		method = "options"
+	default:
+		method = "other"
+	}
+
+	url = extractURL(urlre, m[1])
+
 	stat, err := rec.Field("status")
 	if err != nil {
 		log.Error(3, "[WEBLOG] [%s] Can't parse find status field in %v: %s", service, rec, err)
@@ -131,12 +152,7 @@ func ParseRecord(service string, rec *gonx.Entry) (ReqStat, string, error) {
 	default:
 		resp = "0xx"
 	}
-	split_url := strings.Split(request, "/")
-	if len(split_url) < 2 {
-		url = ""
-	} else {
-		url = split_url[1]
-	}
+
 	prefix = fmt.Sprintf("%s.%s.%s", url, method, resp)
 	w.prefix = prefix
 	w.t_time = parsems(rec.Field("request_time"))
@@ -165,7 +181,7 @@ func append_latency(m Metrics, name string, ts int64, value uint64, reqs uint64)
 	return m
 }
 
-func CollectWebLogStat(service string, filename string, format string) error {
+func CollectWebLogStat(service string, filename string, format string, url_format string) error {
 	var w ReqStat
 	var t *tail.Tail
 	var last_ts int64
@@ -173,7 +189,13 @@ func CollectWebLogStat(service string, filename string, format string) error {
 	var m Metrics
 	var webmetrics map[string]ReqStat
 	var err error
+	var urlre *regexp.Regexp
 
+	urlre, err = regexp.Compile(url_format)
+	if err != nil {
+		log.Error(3, "[WEBLOG] [%s] Can't compile url regexp %s: %s", service, url_format, err)
+		return err
+	}
 	p := gonx.NewParser(format)
 	log.Debug("[WEBLOG] [%s] Opening logfile %s with format %s", service, filename, format)
 	t, err = tail.TailFile(filename, tail.Config{ReOpen: true, Follow: true, Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}})
@@ -190,7 +212,7 @@ func CollectWebLogStat(service string, filename string, format string) error {
 			log.Error(3, "[WEBLOG] [%s] Can't read log entry: %s", service, err)
 			continue
 		}
-		w, prefix, err = ParseRecord(service, rec)
+		w, prefix, err = ParseRecord(service, rec, urlre)
 		if err != nil {
 			log.Error(3, "[WEBLOG] [%s] Can't parse web entry: %s", service, err)
 			continue
@@ -212,6 +234,7 @@ func CollectWebLogStat(service string, filename string, format string) error {
 				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_rt", v.ts, v.t_us_response, v.req)
 				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_connect", v.ts, v.t_us_connect, v.req)
 				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_headers", v.ts, v.t_us_headers, v.req)
+				m = append_latency(m, PREFIX+service+".url."+v.prefix+".proxy_latency", v.ts, v.t_time-v.t_us_response, v.req)
 				log.Trace("[WEBLOG] [%s] k=%v, v=%v", service, k, v)
 			}
 			metricschannel <- m

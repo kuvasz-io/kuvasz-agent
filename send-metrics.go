@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"kuvasz-agent/log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type Metric struct {

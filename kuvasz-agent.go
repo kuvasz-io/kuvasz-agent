@@ -3,15 +3,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/ini.v1"
-	"kuvasz-agent/log"
-	"kuvasz-agent/util"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+
+	"gopkg.in/ini.v1"
+	"kuvasz.io/kuvasz-agent/log"
+	"kuvasz.io/kuvasz-agent/util"
 )
 
 const MAX_NETDEV = 256
@@ -21,10 +23,12 @@ const PAGE_SIZE = 4096
 
 type WebLog struct {
 	service       string
-	status_url    string
 	logfile       string
 	format        string
+	url_format    string
+	status_url    string
 	status_format string
+	urlre         *regexp.Regexp
 }
 
 var (
@@ -185,9 +189,10 @@ func main() {
 	for i := range w {
 		WEBLOGS = append(WEBLOGS, WebLog{
 			service:       w[i],
-			status_url:    Cfg.Section("web." + w[i]).Key("status_url").MustString(""),
 			logfile:       Cfg.Section("web." + w[i]).Key("logfile").MustString(""),
 			format:        Cfg.Section("web." + w[i]).Key("format").MustString(""),
+			url_format:    Cfg.Section("web." + w[i]).Key("url_format").MustString("/([^? /]*)"),
+			status_url:    Cfg.Section("web." + w[i]).Key("status_url").MustString(""),
 			status_format: strings.Replace(Cfg.Section("web."+w[i]).Key("status_format").MustString(""), "\\n", "\n", -1),
 		})
 	}
@@ -258,7 +263,7 @@ func main() {
 
 	for i := range WEBLOGS {
 		wg.Add(1)
-		go CollectWebLogStat(WEBLOGS[i].service, WEBLOGS[i].logfile, WEBLOGS[i].format)
+		go CollectWebLogStat(WEBLOGS[i].service, WEBLOGS[i].logfile, WEBLOGS[i].format, WEBLOGS[i].url_format)
 		go CollectWebserverStat(WEBLOGS[i].service, WEBLOGS[i].status_url, WEBLOGS[i].status_format)
 	}
 

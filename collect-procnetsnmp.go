@@ -2,11 +2,12 @@ package main
 
 import (
 	"bufio"
-	"kuvasz-agent/log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type properties struct {

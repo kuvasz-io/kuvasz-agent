@@ -22,7 +22,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
-	"kuvasz-agent/log"
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type pgmetric struct {

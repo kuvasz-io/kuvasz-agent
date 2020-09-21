@@ -2,12 +2,13 @@ package main
 
 import (
 	"bufio"
-	"kuvasz-agent/log"
 	"os"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 func getfstypes() map[string]bool {

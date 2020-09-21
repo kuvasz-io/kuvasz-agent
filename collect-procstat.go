@@ -3,10 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"kuvasz-agent/log"
 	"os"
 	"strings"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 type CpuUsage struct {

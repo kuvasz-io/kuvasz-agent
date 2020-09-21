@@ -2,13 +2,14 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/soniah/gosnmp"
 	"io/ioutil"
-	"kuvasz-agent/log"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/soniah/gosnmp"
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 const MAX_OID = 50

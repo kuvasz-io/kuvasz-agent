@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"kuvasz-agent/log"
 	"os"
 	"os/user"
 	"regexp"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"kuvasz.io/kuvasz-agent/log"
 )
 
 const (
