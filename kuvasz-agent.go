@@ -29,6 +29,7 @@ type WebLog struct {
 	status_url    string
 	status_format string
 	urlre         *regexp.Regexp
+	upstream_time int
 }
 
 var (
@@ -194,6 +195,7 @@ func main() {
 			url_format:    Cfg.Section("web." + w[i]).Key("url_format").MustString("/([^? /]*)"),
 			status_url:    Cfg.Section("web." + w[i]).Key("status_url").MustString(""),
 			status_format: strings.Replace(Cfg.Section("web."+w[i]).Key("status_format").MustString(""), "\\n", "\n", -1),
+			upstream_time: Cfg.Section("web." + w[i]).Key("upstream_time").MustInt(1),
 		})
 	}
 	log.Debug("Web logs: %v", WEBLOGS)
@@ -263,7 +265,7 @@ func main() {
 
 	for i := range WEBLOGS {
 		wg.Add(1)
-		go CollectWebLogStat(WEBLOGS[i].service, WEBLOGS[i].logfile, WEBLOGS[i].format, WEBLOGS[i].url_format)
+		go CollectWebLogStat(WEBLOGS[i].service, WEBLOGS[i].logfile, WEBLOGS[i].format, WEBLOGS[i].url_format, WEBLOGS[i].upstream_time)
 		go CollectWebserverStat(WEBLOGS[i].service, WEBLOGS[i].status_url, WEBLOGS[i].status_format)
 	}
 

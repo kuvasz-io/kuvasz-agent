@@ -78,7 +78,7 @@ func extractURL(re *regexp.Regexp, u string) string {
 	return url
 }
 
-func ParseRecord(service string, rec *gonx.Entry, urlre *regexp.Regexp) (ReqStat, string, error) {
+func ParseRecord(service string, rec *gonx.Entry, urlre *regexp.Regexp, upstream_time int) (ReqStat, string, error) {
 	var w ReqStat
 	var method string
 	var resp string
@@ -156,9 +156,11 @@ func ParseRecord(service string, rec *gonx.Entry, urlre *regexp.Regexp) (ReqStat
 	prefix = fmt.Sprintf("%s.%s.%s", url, method, resp)
 	w.prefix = prefix
 	w.t_time = parsems(rec.Field("request_time"))
-	w.t_us_connect = parsems(rec.Field("upstream_connect_time"))
-	w.t_us_headers = parsems(rec.Field("upstream_header_time"))
-	w.t_us_response = parsems(rec.Field("upstream_response_time"))
+	if upstream_time == 1 {
+		w.t_us_connect = parsems(rec.Field("upstream_connect_time"))
+		w.t_us_headers = parsems(rec.Field("upstream_header_time"))
+		w.t_us_response = parsems(rec.Field("upstream_response_time"))
+	}
 	log.Trace("[WEBLOG] [%s] metrics: %+v", service, w)
 	return w, prefix, nil
 }
@@ -181,7 +183,7 @@ func append_latency(m Metrics, name string, ts int64, value uint64, reqs uint64)
 	return m
 }
 
-func CollectWebLogStat(service string, filename string, format string, url_format string) error {
+func CollectWebLogStat(service string, filename string, format string, url_format string, upstream_time int) error {
 	var w ReqStat
 	var t *tail.Tail
 	var last_ts int64
@@ -212,7 +214,7 @@ func CollectWebLogStat(service string, filename string, format string, url_forma
 			log.Error(3, "[WEBLOG] [%s] Can't read log entry: %s", service, err)
 			continue
 		}
-		w, prefix, err = ParseRecord(service, rec, urlre)
+		w, prefix, err = ParseRecord(service, rec, urlre, upstream_time)
 		if err != nil {
 			log.Error(3, "[WEBLOG] [%s] Can't parse web entry: %s", service, err)
 			continue
@@ -231,10 +233,12 @@ func CollectWebLogStat(service string, filename string, format string, url_forma
 				m = append_rate(m, PREFIX+service+".url."+v.prefix+".bytes_in", v.ts, v.io_rx)
 				m = append_rate(m, PREFIX+service+".url."+v.prefix+".bytes_out", v.ts, v.io_tx)
 				m = append_latency(m, PREFIX+service+".url."+v.prefix+".rt", v.ts, v.t_time, v.req)
-				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_rt", v.ts, v.t_us_response, v.req)
-				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_connect", v.ts, v.t_us_connect, v.req)
-				m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_headers", v.ts, v.t_us_headers, v.req)
-				m = append_latency(m, PREFIX+service+".url."+v.prefix+".proxy_latency", v.ts, v.t_time-v.t_us_response, v.req)
+				if upstream_time == 1 {
+					m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_rt", v.ts, v.t_us_response, v.req)
+					m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_connect", v.ts, v.t_us_connect, v.req)
+					m = append_latency(m, PREFIX+service+".url."+v.prefix+".upstream_headers", v.ts, v.t_us_headers, v.req)
+					m = append_latency(m, PREFIX+service+".url."+v.prefix+".proxy_latency", v.ts, v.t_time-v.t_us_response, v.req)
+				}
 				log.Trace("[WEBLOG] [%s] k=%v, v=%v", service, k, v)
 			}
 			metricschannel <- m
