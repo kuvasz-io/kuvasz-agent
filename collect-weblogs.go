@@ -180,7 +180,7 @@ func append_ratio(m Metrics, name string, v ReqStat, ReqTotal int) Metrics {
 	metric.Value = float32(v.req) / float32(ReqTotal)
 	metric.Ts = v.ts
 	m = append(m, metric)
-	fmt.Printf("%s: req=%d, total=%d, ratio=%f\n", name, v.req, ReqTotal, metric.Value)
+	// fmt.Printf("%s: req=%d, total=%d, ratio=%f\n", name, v.req, ReqTotal, metric.Value)
 	return m
 }
 
@@ -217,7 +217,7 @@ func CollectWebLogStat(service string, filename string, format string, url_forma
 	}
 	for l := range t.Lines {
 		line := l.Text
-		fmt.Printf(".")
+		// fmt.Printf(".")
 		log.Debug("[WEBLOG] [%s] %s", service, line)
 		rec, err := p.ParseString(line)
 		if err != nil {
