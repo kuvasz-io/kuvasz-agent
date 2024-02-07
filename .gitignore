@@ -1,0 +1,9 @@
+/*.log
+/kuvasz-agent
+/*.deb
+/*.rpm
+/.DS_Store
+/packaging/rpm/*
+/packaging/deb/*
+
+

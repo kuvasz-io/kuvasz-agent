@@ -1,0 +1,22 @@
+version: 0.1
+cli:
+  version: 1.7.0
+plugins:
+  sources:
+    - id: trunk
+      ref: v0.0.15
+      uri: https://github.com/trunk-io/plugins
+lint:
+  enabled:
+    - git-diff-check
+    - gitleaks@8.16.2
+    - gofmt@1.19.3
+    - golangci-lint@1.52.2
+    - markdownlint@0.33.0
+    - prettier@2.8.7
+    - shellcheck@0.9.0
+    - shfmt@3.5.0
+runtimes:
+  enabled:
+    - go@1.19.5
+    - node@18.12.1
