@@ -19,25 +19,31 @@ const MAX_CPU = 256
 const MAX_DISK = 256
 const PAGE_SIZE = 4096
 
-type WebLog struct {
-	service       string
-	logfile       string
-	format        string
-	url_format    string
-	status_url    string
-	status_format string
-	upstream_time int
-}
+type (
+	WebLog struct {
+		service       string
+		logfile       string
+		format        string
+		url_format    string
+		status_url    string
+		status_format string
+		upstream_time int
+	}
 
-type Header struct {
-	key   string
-	value string
-}
-type Cert struct {
-	sites map[string]interface{}
-}
+	Header struct {
+		key   string
+		value string
+	}
+	Cert struct {
+		sites map[string]interface{}
+	}
+)
 
 var (
+	Package string
+	Version string
+	Build   string
+
 	// Configuration file
 	Cfg *ini.File
 
