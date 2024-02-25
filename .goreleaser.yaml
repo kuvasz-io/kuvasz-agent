@@ -1,0 +1,54 @@
+version: 1
+
+gomod:
+  proxy: true
+  env:
+    - GOPROXY=https://proxy.golang.org,direct
+    - GOSUMDB=sum.golang.org
+    - GOPRIVATE=github.com/kuvasz-io/kuvasz-agent
+
+  mod: readonly
+  gobinary: go
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    main: ./cmd/
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+nfpms:
+  - vendor: Kuvasz.io
+    homepage: https://agent.kuvasz.io/
+    maintainer: Kuvasz <kuvasz@kuvasz.io>
+    description: |-
+      Kuvasz-Agent is a lightweight monitoring system for Linux, MySQL, PostgreSQL and others.
+    license: AGPL-3.0
+    formats:
+      - deb
+      - rpm
+    umask: 0o002
+    provides:
+      - kuvasz-agent
+    contents:
+      - src: package/kuvasz-agent.service
+        dst: /usr/lib/systemd/system/kuvasz-agent.service
+      - src: package/etc/
+        dst: /etc
+        type: tree
+    scripts:
+      postinstall: package/postinstall.sh
+      postremove: package/postremove.sh
+
+changelog:
+  disable: true

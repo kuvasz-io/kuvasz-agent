@@ -1,21 +1,19 @@
 [Unit]
 Description=Kuvasz agent
-Documentation=http://docs.kuvasz.io
+Documentation=http://agent.kuvasz.io
 Wants=network-online.target
 After=network-online.target
-StartLimitIntervalSec=0
 
 [Service]
-EnvironmentFile=/etc/default/kuvasz-agent
+EnvironmentFile=-
 User=root
 Group=root
 Type=simple
 WorkingDirectory=/var/log/kuvasz
-ExecStart=/usr/sbin/kuvasz-agent
+ExecStart=/usr/bin/kuvasz-agent
 LimitNOFILE=10000
 Restart=always
-RestartSec=1
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
-

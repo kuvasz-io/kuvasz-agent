@@ -8,19 +8,9 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Set up environment
-      run: |
-        sudo apt install -y golang-1.21 ruby
-        sudo gem install fpm
+    - uses: actions/checkout@v4
 
     - name: Build binary
-      run: |
-        export PATH=${PATH}:/usr/lib/go-1.21/bin
-        make kuvasz-agent
-
-    - name: Build package
-      run: make package
+      run: make kuvasz-agent
