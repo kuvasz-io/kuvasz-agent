@@ -30,7 +30,7 @@ type PGStat struct {
 var pg_translation map[string]pgmetric
 var db *sqlx.DB
 var re *regexp.Regexp
-var version int
+var pgVersion int
 
 func init_pg_translation() {
 	pg_translation = map[string]pgmetric{
@@ -409,7 +409,7 @@ func ReadDBSize(pgstat *PGStat) error {
 }
 
 func ReadPGStatWAL(pgstat *PGStat) error {
-	if version >= 14 {
+	if pgVersion >= 14 {
 		log.Debug("[POSTGRES] Read pg_stat_wal")
 		rows, err := db.Queryx("select * from pg_stat_wal")
 		if err != nil {
@@ -435,7 +435,7 @@ func ReadPGStatWAL(pgstat *PGStat) error {
 			}
 		}
 	}
-	if version >= 10 {
+	if pgVersion >= 10 {
 		log.Debug("[POSTGRES] Read pg_ls_waldir")
 		rows, err := db.Queryx("select count(*) as count, sum(size) as size from pg_ls_waldir() where length(name)=24;")
 		if err != nil {
@@ -508,7 +508,7 @@ func ReadPGStatStatements(pgstat *PGStat) error {
 	var q string
 
 	log.Debug("[POSTGRES] Read pg_stat_statements")
-	if version < 13 {
+	if pgVersion < 13 {
 		q = `
 				SELECT  db.datname as database, substring(md5(dbid::text || userid::text || queryid::text) for 8) as qid, 
 						calls,
@@ -759,7 +759,7 @@ func DoCollectPGStat() {
 	}
 	defer db.Close()
 
-	err = db.QueryRow("SELECT current_setting('server_version_num')::int/10000;").Scan(&version)
+	err = db.QueryRow("SELECT current_setting('server_version_num')::int/10000;").Scan(&pgVersion)
 	if err != nil {
 		log.Error(3, "Can't read server version: %v", err)
 		return
