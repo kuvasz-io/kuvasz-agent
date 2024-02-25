@@ -9,7 +9,6 @@ EnvironmentFile=-
 User=root
 Group=root
 Type=simple
-WorkingDirectory=/var/log/kuvasz
 ExecStart=/usr/bin/kuvasz-agent
 LimitNOFILE=10000
 Restart=always
