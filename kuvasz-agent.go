@@ -40,9 +40,9 @@ type (
 )
 
 var (
-	Package string
-	Version string
-	Build   string
+	version string
+	commit  string
+	date    string
 
 	// Configuration file
 	Cfg *ini.File
@@ -155,8 +155,6 @@ func main() {
 	var err error
 	var configfile string
 
-	// TEST_ENABLED = true
-	// TEST_PROCROOT = "/Users/gyazbek/go/src/kuvasz/kuvasz-agent/test/rhel6.7"
 	metricschannel = make(chan Metrics, 1000)
 	if len(os.Args) == 2 {
 		configfile = os.Args[1]
@@ -178,6 +176,7 @@ func main() {
 	}
 	Cfg.BlockMode = false
 	initLogging()
+	log.Debug("Kuvasz-agent version:%s, commit: %s, date: %s", version, commit, date)
 	SAMPLING_ENABLED = Cfg.Section("sampling").Key("enabled").MustInt(1)
 	DELTA = float32(Cfg.Section("sampling").Key("interval").MustFloat64(60.0))
 	DISKDEV_BLACKLIST = Cfg.Section("sampling").Key("diskdev_blacklist").MustString("^$")
