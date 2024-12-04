@@ -19,7 +19,7 @@ type pgmetric struct {
 
 type pgmetricvalue struct {
 	isgauge bool
-	value   uint64
+	value   any
 	ts      int64
 }
 
@@ -34,10 +34,6 @@ var pgVersion int
 
 func init_pg_translation() {
 	pg_translation = map[string]pgmetric{
-		// connections
-		"conn_cur":  {"connections.current", true},
-		"conn_max":  {"connections.max", true},
-		"conn_util": {"connections.%util", true},
 		// pg_stat_bgwriter
 		"checkpoints_timed":     {"bg_writer.checkpoints.scheduled", false},
 		"checkpoints_req":       {"bg_writer.checkpoints.requested", false},
@@ -92,26 +88,26 @@ func init_pg_translation() {
 		"n_dead_tup":          {"rows.dead", true},
 		"n_mod_since_analyze": {"analyze.modifications_since", true},
 		"last_analyze":        {"analyze.time_since", true},
-		"analyze_count":       {"analyze.count", false},
+		"analyze_count":       {"analyze.count", true},
 		"last_autoanalyze":    {"autoanalyze.time_since", true},
-		"autoanalyze_count":   {"autoanalyze.count", false},
+		"autoanalyze_count":   {"autoanalyze.count", true},
 		"last_vacuum":         {"vacuum.time_since", true},
-		"vacuum_count":        {"vacuum.count", false},
+		"vacuum_count":        {"vacuum.count", true},
 		"last_autovacuum":     {"autovacuum.time_since", true},
-		"autovacuum_count":    {"autovacuum.count", false},
+		"autovacuum_count":    {"autovacuum.count", true},
 		// pg_statio_user_tables
 		"heap_blks_read":  {"heap.blockread", false},
 		"heap_blks_hit":   {"heap.blockhit", false},
 		"heap_blks_hr":    {"heap.%hit", true},
 		"idx_blks_read":   {"index.blockread", false},
 		"idx_blks_hit":    {"index.blockhit", false},
-		"idx_blks_hr":     {"index.%hit", false},
+		"idx_blks_hr":     {"index.%hit", true},
 		"toast_blks_read": {"toast.blockread", false},
 		"toast_blks_hit":  {"toast.blockhit", false},
-		"toast_blks_hr":   {"toast.%hit", false},
+		"toast_blks_hr":   {"toast.%hit", true},
 		"tidx_blks_read":  {"toastindex.blockread", false},
 		"tidx_blks_hit":   {"toastindex.blockhit", false},
-		"tidx_blks_hr":    {"toastindex.%hit", false},
+		"tidx_blks_hr":    {"toastindex.%hit", true},
 		// pg_replication_slots
 		"active":              {"replication.active", true},
 		"sent_lag_bytes":      {"replication.sent_lag_bytes", true},
@@ -169,10 +165,32 @@ func conv(unk interface{}) uint64 {
 	}
 }
 
+func tofloat32(unk interface{}) float32 {
+	if unk == nil {
+		return 0
+	}
+	switch i := unk.(type) {
+	case float64:
+		return float32(i)
+	case float32:
+		return i
+	case int:
+		return float32(i)
+	case int64:
+		return float32(i)
+	case uint64:
+		return float32(i)
+	default:
+		log.Error(3, "Converting unknown type: %#v (%T)", unk, unk)
+		return 0
+	}
+}
+
 func ReadPGStatActivity(pgstat *PGStat) error {
 	log.Debug("[POSTGRES] Read pg_stat_activity")
-	rows, err := db.Queryx(`select 'database.' || datname || '.activity.' || usename || '.' ||
-									case when application_name = '' then 'None' 
+	rows, err := db.Queryx(`select 'database.' || datname || '.activity.' || coalesce(usename,'postgres') || '.' ||
+									case when application_name = '' then 
+										regexp_replace(backend_type, '[^a-zA-Z0-9\-]','-', 'g') 
 									     else regexp_replace(application_name, '[^a-zA-Z0-9\-]','-', 'g') 
 									end || '.' ||
 									case state
@@ -189,7 +207,7 @@ func ReadPGStatActivity(pgstat *PGStat) error {
 								   count(*) as counts
 	                        from pg_stat_activity
 							where datname is not null
-							group by datname, usename, application_name, state, wait_event_type, wait_event`)
+							group by datname, usename, application_name, state, wait_event_type, wait_event, backend_type`)
 	if err != nil {
 		log.Error(3, "[POSTGRES] [pg_stat_activity] Can't execute select * from pg_stat_activity: %s", err)
 		return err
@@ -208,10 +226,35 @@ func ReadPGStatActivity(pgstat *PGStat) error {
 		log.Trace("[POSTGRES] [pg_stat_activity] %s = %d", metric, conv(results["counts"]))
 		pgstat.metrics[metric] = pgmetricvalue{true, conv(results["counts"]), time.Now().Unix()}
 	}
+
 	return nil
 }
 
-func ReadPGTableStat(dbname string, pgstat *PGStat) error {
+func ReadPGBackends(pgstat *PGStat) error {
+	var backendType string
+	var count uint64
+	log.Debug("[POSTGRES] Read pg_stat_activity backends")
+	rows, err := db.Queryx(`select backend_type, count(*) from pg_stat_activity group by backend_type;`)
+	if err != nil {
+		log.Error(3, "[POSTGRES] [pg_stat_activity] Can't execute select backend_type from pg_stat_activity: %s", err)
+		return err
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		err := rows.Scan(&backendType, &count)
+		if err != nil {
+			log.Error(3, "[POSTGRES] [pg_stat_activity] Can't scan pg_stat_activity backends: ", err)
+			break
+		}
+		log.Trace("[POSTGRES] [pg_stat_activity] Backend type: %s, count: %d", backendType, count)
+		pgstat.metrics["backend."+backendType] = pgmetricvalue{true, count, time.Now().Unix()}
+	}
+
+	return nil
+}
+
+func ReadPGStatTables(dbname string, pgstat *PGStat) error {
 	dsn := strings.Replace(POSTGRES_DB_DSN, "$$", dbname, 1)
 	log.Trace("[POSTGRES] [%s] Open connection using dsn: %s", dbname, dsn)
 
@@ -362,7 +405,7 @@ func ReadPGStatDatabase(pgstat *PGStat) error {
 		}
 		// table stats
 		if POSTGRES_DB_DSN != "" {
-			err = ReadPGTableStat(dbname, pgstat)
+			err = ReadPGStatTables(dbname, pgstat)
 			if err != nil {
 				log.Error(3, "[POSTGRES] [%s] Can't read postgres table stats, try later", dbname)
 				continue
@@ -373,11 +416,11 @@ func ReadPGStatDatabase(pgstat *PGStat) error {
 	return nil
 }
 
-func ReadDBSize(pgstat *PGStat) error {
-	log.Debug("[POSTGRES] Read pg_database_size")
-	rows, err := db.Queryx("select pg_database.datname, pg_database_size(pg_database.datname) as size FROM pg_database")
+func ReadPGDatabase(pgstat *PGStat) error {
+	log.Debug("[POSTGRES] Read pg_database info")
+	rows, err := db.Queryx("select pg_database.datname, pg_database_size(pg_database.datname) as size, age(datfrozenxid) as age FROM pg_database")
 	if err != nil {
-		log.Error(3, "[POSTGRES] [pg_database_size] Can't execute select pg_database_size()...: %s", err)
+		log.Error(3, "[POSTGRES] [pg_database] Can't execute select pg_database...: %s", err)
 		return err
 	}
 
@@ -399,11 +442,10 @@ func ReadDBSize(pgstat *PGStat) error {
 			log.Trace("[POSTGRES] Database %s blackisted, ignoring", dbname)
 			continue
 		}
-		log.Trace("[POSTGRES] [pg_database_size] Scanning pg_database_size for %s", dbname)
-		name := "database." + dbname + ".size"
-		v := results["size"]
-		log.Trace("[POSTGRES] [pg_database_size] size of %s = %d", dbname, conv(v))
-		pgstat.metrics[name] = pgmetricvalue{true, conv(v), time.Now().Unix()}
+		log.Trace("[POSTGRES] [pg_database_size] Scanning pg_database for %s", dbname)
+		name := "database." + dbname
+		pgstat.metrics[name+".size"] = pgmetricvalue{true, conv(results["size"]), time.Now().Unix()}
+		pgstat.metrics[name+".age"] = pgmetricvalue{true, conv(results["age"]), time.Now().Unix()}
 	}
 	return nil
 }
@@ -632,31 +674,34 @@ func ReadPGReplicationSlots(pgstat *PGStat) error {
 	return nil
 }
 
-func ReadPGUptime(pgstat *PGStat) error {
-	log.Debug("[POSTGRES] Read pg_uptime")
-	rows, err := db.Queryx(`select extract('epoch' from now() - pg_postmaster_start_time())::int as uptime`)
+func ReadPGGlobals(pgstat *PGStat) error {
+	var uptime, autovacuumFreezeMaxAge, vacuumFreezeMinAge, vacuumFreezeTableAge, autovacuumMaxWorkers int64
+
+	log.Debug("[POSTGRES] Read config and other globals")
+	err := db.QueryRow(`select extract('epoch' from now() - pg_postmaster_start_time())::bigint,
+							current_setting('autovacuum_freeze_max_age')::bigint,
+							current_setting('vacuum_freeze_min_age')::bigint,
+							current_setting('vacuum_freeze_table_age')::bigint,
+							current_setting('autovacuum_max_workers')::bigint`).
+		Scan(&uptime,
+			&autovacuumFreezeMaxAge,
+			&vacuumFreezeMinAge,
+			&vacuumFreezeTableAge,
+			&autovacuumMaxWorkers)
 	if err != nil {
-		log.Error(3, "[POSTGRES] [pg_uptime] Can't execute select from pg_postmaster_start_time(): %s", err)
+		log.Error(3, "[POSTGRES] [PGGlobals] Can't execute select from pg_postmaster_start_time() and globals: %s", err)
 		return err
 	}
 
-	defer rows.Close()
-	for rows.Next() {
-		results := make(map[string]interface{})
-		err = rows.MapScan(results)
-		if err != nil {
-			log.Error(3, "[POSTGRES] [pg_uptime] Can't map pg_uptime: ", err)
-			break
-		}
-		log.Trace("[POSTGRES] [pg_uptime] result=%+v", results)
-		uptime := conv(results["uptime"])
-		log.Trace("[POSTGRES] [pg_uptime] uptime = %d", uptime)
-		pgstat.metrics["uptime"] = pgmetricvalue{true, uptime, time.Now().Unix()}
-	}
+	pgstat.metrics["uptime"] = pgmetricvalue{true, conv(uptime), time.Now().Unix()}
+	pgstat.metrics["config.autovacuum_freeze_max_age"] = pgmetricvalue{true, conv(autovacuumFreezeMaxAge), time.Now().Unix()}
+	pgstat.metrics["config.vacuum_freeze_min_age"] = pgmetricvalue{true, conv(vacuumFreezeMinAge), time.Now().Unix()}
+	pgstat.metrics["config.vacuum_freeze_table_age"] = pgmetricvalue{true, conv(vacuumFreezeTableAge), time.Now().Unix()}
+	pgstat.metrics["config.autovacuum_max_workers"] = pgmetricvalue{true, conv(autovacuumMaxWorkers), time.Now().Unix()}
 	return nil
 }
 
-func ReadPGReplication() (float32, error) {
+func ReadPGReplication(pgstat *PGStat) error {
 	var rec bool
 	var delay float32
 
@@ -664,12 +709,13 @@ func ReadPGReplication() (float32, error) {
 	err := db.QueryRow("select pg_is_in_recovery()").Scan(&rec)
 	if err != nil {
 		log.Error(3, "Can't execute select pg_is_in_recovery(): %s", err)
-		return 0, err
+		return err
 	}
 
 	if !rec {
 		log.Trace("[POSTGRES] Instance is not a slave")
-		return 0, nil
+		pgstat.metrics["replication.lag"] = pgmetricvalue{true, 0, time.Now().Unix()}
+		return nil
 	}
 
 	err = db.QueryRow(`SELECT CASE WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn()
@@ -678,11 +724,31 @@ func ReadPGReplication() (float32, error) {
                               END`).Scan(&delay)
 	if err != nil {
 		log.Error(3, "Can't extract replication delay: %s", err)
-		return 0, err
+		return err
 	}
 	log.Trace("[POSTGRES] Replication delay = %f", delay)
-	// pgstat.metrics["postgres.replication.lag"] = pgmetricvalue{true, delay, time.Now().Unix()}
-	return delay, nil
+	pgstat.metrics["replication.lag"] = pgmetricvalue{true, delay, time.Now().Unix()}
+	return nil
+}
+
+func ReadConnections(pgstat *PGStat) error {
+	var curr, max uint64
+	var util float32
+
+	log.Debug("[POSTGRES] Read connections")
+	err := db.QueryRow(`select sum(numbackends) as conn_cur, 
+								  (SELECT setting::float FROM pg_settings WHERE name = 'max_connections') as conn_max,
+								  sum(numbackends) / (SELECT setting::float FROM pg_settings WHERE name = 'max_connections') as conn_util
+							from pg_stat_database;`).Scan(&curr, &max, &util)
+	if err != nil {
+		log.Error(3, "Can't get number of connections: %s", err)
+		return err
+	}
+	log.Trace("[POSTGRES] Connections current = %f, max = %f, utilization = %f", curr, max, util)
+	pgstat.metrics["connections.current"] = pgmetricvalue{true, curr, time.Now().Unix()}
+	pgstat.metrics["connections.max"] = pgmetricvalue{true, max, time.Now().Unix()}
+	pgstat.metrics["connections.%util"] = pgmetricvalue{true, util, time.Now().Unix()}
+	return nil
 }
 
 func ReadPGStat(pgstat *PGStat) error {
@@ -698,7 +764,7 @@ func ReadPGStat(pgstat *PGStat) error {
 		return err
 	}
 
-	err = ReadDBSize(pgstat)
+	err = ReadPGDatabase(pgstat)
 	if err != nil {
 		return err
 	}
@@ -713,7 +779,7 @@ func ReadPGStat(pgstat *PGStat) error {
 		return err
 	}
 
-	err = ReadPGUptime(pgstat)
+	err = ReadPGGlobals(pgstat)
 	if err != nil {
 		return err
 	}
@@ -723,18 +789,22 @@ func ReadPGStat(pgstat *PGStat) error {
 		return err
 	}
 
+	err = ReadPGBackends(pgstat)
+	if err != nil {
+		return err
+	}
 	_ = ReadPGStatStatements(pgstat)
 	_ = ReadPGReplicationSlots(pgstat)
+	_ = ReadPGReplication(pgstat)
+	_ = ReadConnections(pgstat)
 
 	return nil
 }
 
 func DoCollectPGStat() {
 	var OldPGStat, NewPGStat, TempPGStat PGStat
-	var curr, max, util float32
 	var err error
 	var m Metrics
-	var delay float32
 
 	log.Trace("[POSTGRES] Initialize translation data")
 	init_pg_translation()
@@ -772,6 +842,7 @@ func DoCollectPGStat() {
 	}
 	for {
 		time.Sleep(time.Duration(DELTA) * time.Second)
+		log.Info("[POSTGRES] Collect stats")
 		// Collect global and database specific metrics
 		err = ReadPGStat(&NewPGStat)
 		if err != nil {
@@ -781,42 +852,23 @@ func DoCollectPGStat() {
 		// Send stats
 		for k, v := range NewPGStat.metrics {
 			if v.isgauge {
-				m = send_metric(m, "postgres."+k, float32(v.value))
+				m = send_metric(m, "postgres."+k, tofloat32(v.value))
 			} else {
 				ov, ok := OldPGStat.metrics[k]
+				ovvalue := conv(ov.value)
+				vvalue := conv(v.value)
 				if !ok {
 					log.Trace("[POSTGRES] Found new metric: %s, storing", k)
 				} else {
 					log.Trace("[POSTGRES] %s, new=%d, old=%d", k, v.value, ov.value)
-					if ov.value > v.value {
+					if ovvalue > vvalue {
 						log.Debug("[POSTGRES] %s, skipping decreasing counter", k)
 					} else {
-						m = send_metric(m, "postgres."+k, float32(v.value-ov.value)/float32(v.ts-ov.ts))
+						m = send_metric(m, "postgres."+k, float32(vvalue-ovvalue)/float32(v.ts-ov.ts))
 					}
 				}
 			}
 		}
-		// Collect replication lag
-		delay, err = ReadPGReplication()
-		if err != nil {
-			log.Error(3, "Can't read replication status, try later")
-		}
-		// Send replication lag
-		m = send_metric(m, "postgres.replication.lag", delay)
-
-		log.Debug("[POSTGRES] Read connections")
-		err := db.QueryRow(`select sum(numbackends) as conn_cur, 
-									  (SELECT setting::float FROM pg_settings WHERE name = 'max_connections') as conn_max,
-									  sum(numbackends) / (SELECT setting::float FROM pg_settings WHERE name = 'max_connections') as conn_util
-								from pg_stat_database;`).Scan(&curr, &max, &util)
-		if err != nil {
-			log.Error(3, "Can't get number of connections: %s", err)
-			return
-		}
-		log.Trace("[POSTGRES] Connections current = %f, max = %f, utilization = %f", curr, max, util)
-		m = send_metric(m, "postgres."+pg_translation["conn_cur"].name, curr)
-		m = send_metric(m, "postgres."+pg_translation["conn_max"].name, max)
-		m = send_metric(m, "postgres."+pg_translation["conn_util"].name, util)
 
 		TempPGStat = NewPGStat
 		NewPGStat = OldPGStat

@@ -118,7 +118,7 @@ func ReadPidStat() PidStat {
 		}
 		pid, err := strconv.Atoi(list[i].Name())
 		if err != nil {
-			log.Error(3, "[PS] Can't get pid file name, skipping: %s", err)
+			log.Debug("[PS] Can't get pid file name, skipping: %s", err)
 			continue
 		}
 		uid := list[i].Sys().(*syscall.Stat_t).Uid

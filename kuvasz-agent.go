@@ -308,7 +308,9 @@ func main() {
 	}
 
 	// Start SNMP collectors
-	go CollectSnmp()
+	if SNMP_JSON_DIR != "" {
+		go CollectSnmp()
+	}
 
 	// Start metrics sender
 	if CARBONURL != "" {
