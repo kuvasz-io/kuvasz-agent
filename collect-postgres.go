@@ -564,7 +564,7 @@ func ReadPGStatStatements(pgstat *PGStat) error {
 						INNER JOIN pg_database db ON db.oid=st.dbid 
 				ORDER BY 4 DESC
 				LIMIT 100;`
-	} else {
+	} else if pgVersion < 17 {
 		q = `
 				SELECT  db.datname as database, substring(md5(dbid::text || userid::text || queryid::text) for 8) as qid, 
 						calls,
@@ -574,6 +574,22 @@ func ReadPGStatStatements(pgstat *PGStat) error {
 						local_blks_hit, local_blks_read, local_blks_dirtied, local_blks_written, 
 						temp_blks_read, temp_blks_written, 
 						blk_read_time, blk_write_time,
+						wal_records, wal_fpi, wal_bytes
+				FROM    		   pg_stat_statements st 
+						INNER JOIN pg_database db ON db.oid=st.dbid 
+				ORDER BY 4 DESC
+				LIMIT 100;`
+	} else {
+		q = `
+				SELECT  db.datname as database, substring(md5(dbid::text || userid::text || queryid::text) for 8) as qid, 
+						calls,
+						total_exec_time+total_plan_time as total_time, 
+						rows, 
+						shared_blks_hit, shared_blks_read, shared_blks_dirtied, shared_blks_written, 
+						local_blks_hit, local_blks_read, local_blks_dirtied, local_blks_written, 
+						temp_blks_read, temp_blks_written, 
+						shared_blk_read_time+local_blk_read_time as blk_read_time, 
+						shared_blk_write_time+local_blk_write_time as blk_write_time,
 						wal_records, wal_fpi, wal_bytes
 				FROM    		   pg_stat_statements st 
 						INNER JOIN pg_database db ON db.oid=st.dbid 
