@@ -27,6 +27,13 @@ type PGStat struct {
 	metrics map[string]pgmetricvalue
 }
 
+type BufferCache struct {
+	database string
+	filenode int
+	dirty    bool
+	count    uint64
+}
+
 var pg_translation map[string]pgmetric
 var db *sqlx.DB
 var re *regexp.Regexp
@@ -74,6 +81,7 @@ func init_pg_translation() {
 		// pg_stat_user_tables
 		"tablesize":           {"tablesize", true},
 		"indexsize":           {"indexsize", true},
+		"toastsize":           {"toastsize", true},
 		"totalsize":           {"totalsize", true},
 		"seq_scan":            {"seq_scan", false},
 		"seq_tup_read":        {"seq_tuples_read", false},
@@ -254,7 +262,7 @@ func ReadPGBackends(pgstat *PGStat) error {
 	return nil
 }
 
-func ReadPGStatTables(dbname string, pgstat *PGStat) error {
+func ReadPGStatTables(dbname string, pgstat *PGStat, bufferCache []BufferCache) error {
 	dsn := strings.Replace(POSTGRES_DB_DSN, "$$", dbname, 1)
 	log.Trace("[POSTGRES] [%s] Open connection using dsn: %s", dbname, dsn)
 
@@ -271,13 +279,18 @@ func ReadPGStatTables(dbname string, pgstat *PGStat) error {
 	defer db.Close()
 
 	log.Debug("[POSTGRES] [%s] Read pg_stat_user_tables join pg_statio_user_tables", dbname)
-	rows, err := db.Queryx(`select *, 
-                                pg_table_size(p.relid) as tablesize, pg_indexes_size(p.relid) as indexsize, pg_total_relation_size(p.relid) as totalsize,
+	rows, err := db.Queryx(`select p.*, q.*, 
+                                pg_table_size(p.relid) as tablesize, 
+								pg_indexes_size(p.relid) as indexsize, 
+								coalesce(pg_total_relation_size(c.reltoastrelid),0) as toastsize, 
+								pg_total_relation_size(p.relid) as totalsize,
                                 heap_blks_hit, heap_blks_read, 100*heap_blks_hit / nullif((heap_blks_hit  + heap_blks_read), 0) as heap_blks_hr,
                                 idx_blks_hit, idx_blks_read, 100*idx_blks_hit  / nullif((idx_blks_hit   + idx_blks_read),  0) as idx_blks_hr,
                                 toast_blks_hit, toast_blks_read, 100*toast_blks_hit / nullif((toast_blks_hit + toast_blks_read),0) as toast_blks_hr,
                                 tidx_blks_hit, tidx_blks_read, 100*tidx_blks_hit / nullif((tidx_blks_hit  + tidx_blks_read), 0) as tidx_blks_hr
-                            from pg_stat_user_tables p inner join pg_statio_user_tables q on p.relid=q.relid;`)
+                            from pg_stat_user_tables p 
+								inner join pg_statio_user_tables q on p.relid=q.relid
+								inner join pg_class c on p.relid=c.oid;`)
 	if err != nil {
 		log.Error(3, "[POSTGRES] [%s] Can't execute select * from pg_stat_user_tables...: %s", dbname, err)
 		return err
@@ -333,6 +346,54 @@ func ReadPGStatTables(dbname string, pgstat *PGStat) error {
 		}
 	}
 
+	log.Debug("[POSTGRES] [pg_buffercache] [%s] Build filenode to tablename map", dbname)
+	rows, err = db.Queryx(`select relfilenode, relname
+	                       from pg_class c join pg_namespace n ON n.oid = c.relnamespace 
+						   where c.relkind='r' 
+						     and n.nspname <> 'pg_catalog'
+                             and n.nspname <> 'information_schema'
+                             and n.nspname !~ '^pg_toast';`)
+	if err != nil {
+		log.Error(3, "[POSTGRES] [pg_buffercache] [%s] Can't execute select from pgclass...: %s", dbname, err)
+		return err
+	}
+	fileMap := make(map[int]string)
+	for rows.Next() {
+		var node int
+		var tablename string
+		err = rows.Scan(&node, &tablename)
+		if err != nil {
+			log.Trace("[POSTGRES] [pg_buffercache] [%s] Can't map pg_class: %s", dbname, err)
+			break
+		}
+		log.Trace("[POSTGRES] [pg_buffercache] [%s.%s] Found relfilenode: %d", dbname, tablename, node)
+		fileMap[node] = tablename
+	}
+	log.Trace("[POSTGRES] [pg_buffercache] [%s] filenode map: %+v", dbname, fileMap)
+	//
+	counterMap := make(map[string]uint64)
+	for _, b := range bufferCache {
+		if b.database != dbname {
+			continue
+		}
+		tablename, ok := fileMap[b.filenode]
+		if !ok {
+			log.Trace("[POSTGRES] [pg_buffercache] [%s] Can't find table name for filenode %d", dbname, b.filenode)
+			continue
+		}
+		name := "database." + dbname + ".table." + tablename + ".buffercache."
+		if b.dirty {
+			name = name + "dirty"
+		} else {
+			name = name + "clean"
+		}
+		counterMap[name] += b.count
+	}
+	log.Trace("[POSTGRES] [pg_buffercache] Counters Map:+%v", counterMap)
+	for k, v := range counterMap {
+		log.Trace("[POSTGRES] [pg_buffercache] [%s] Adding buffers: %d", k, v)
+		pgstat.metrics[k] = pgmetricvalue{true, conv(v), time.Now().Unix()}
+	}
 	return nil
 }
 
@@ -366,7 +427,33 @@ func ReadPGStatBgwriter(pgstat *PGStat) error {
 	return nil
 }
 
+func readPGBufferCache() []BufferCache {
+	var b []BufferCache
+	log.Debug("[POSTGRES] Read pg_buffercache")
+	rows, err := db.Queryx(`select d.datname database, b.relfilenode, isdirty, count(*)
+							from pg_buffercache b inner join pg_database d on b.reldatabase=d.oid
+							group by 1,2,3`)
+	if err != nil {
+		log.Error(3, "[POSTGRES] [pg_buffercache] Can't execute select from pg_buffercache: %s", err)
+		return b
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var record BufferCache
+		err := rows.Scan(&record.database, &record.filenode, &record.dirty, &record.count)
+		if err != nil {
+			log.Error(3, "[POSTGRES] [pg_buffercache] Can't scan pg_buffercache: ", err)
+			break
+		}
+		log.Trace("[POSTGRES] [pg_buffercache] Database: %s, filenode: %d, dirty: %t, count: %d", record.database, record.filenode, record.dirty, record.count)
+		b = append(b, record)
+	}
+	return b
+}
+
 func ReadPGStatDatabase(pgstat *PGStat) error {
+	b := readPGBufferCache()
 	log.Debug("[POSTGRES] Read pg_stat_database")
 	rows, err := db.Queryx("select * from pg_stat_database")
 	if err != nil {
@@ -405,7 +492,7 @@ func ReadPGStatDatabase(pgstat *PGStat) error {
 		}
 		// table stats
 		if POSTGRES_DB_DSN != "" {
-			err = ReadPGStatTables(dbname, pgstat)
+			err = ReadPGStatTables(dbname, pgstat, b)
 			if err != nil {
 				log.Error(3, "[POSTGRES] [%s] Can't read postgres table stats, try later", dbname)
 				continue
@@ -744,7 +831,7 @@ func ReadConnections(pgstat *PGStat) error {
 		log.Error(3, "Can't get number of connections: %s", err)
 		return err
 	}
-	log.Trace("[POSTGRES] Connections current = %f, max = %f, utilization = %f", curr, max, util)
+	log.Trace("[POSTGRES] Connections current = %d, max = %d, utilization = %f", curr, max, util)
 	pgstat.metrics["connections.current"] = pgmetricvalue{true, curr, time.Now().Unix()}
 	pgstat.metrics["connections.max"] = pgmetricvalue{true, max, time.Now().Unix()}
 	pgstat.metrics["connections.%util"] = pgmetricvalue{true, util, time.Now().Unix()}

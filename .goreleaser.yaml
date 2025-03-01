@@ -43,9 +43,9 @@ nfpms:
     contents:
       - src: package/kuvasz-agent.service
         dst: /usr/lib/systemd/system/kuvasz-agent.service
-      - src: package/etc/
-        dst: /etc
-        type: tree
+      - src: package/etc/kuvasz/kuvasz-agent.ini
+        dst: /etc/kuvasz/kuvasz-agent.ini
+        type: config
     scripts:
       postinstall: package/postinstall.sh
       postremove: package/postremove.sh

@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -70,7 +70,7 @@ func request(service string, url string, headers []Header) {
 	log.Debug("[PING] [%s] Request sent, time=%f", service, duration)
 
 	defer resp.Body.Close()
-	_, err = ioutil.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 
 	duration = float32(time.Since(start).Microseconds()) / 1000
 	if err != nil {
